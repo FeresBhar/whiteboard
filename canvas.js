@@ -17,7 +17,7 @@ let currentThickness = 2
 // Configure your backend URL here
 // For local testing: "localhost:8000"
 // For ngrok: "your-url.ngrok-free.app" (NO https:// prefix!)
-const BACKEND_URL = "fd38-196-176-254-74.ngrok-free.app"  // Change this to your ngrok URL when sharing
+const BACKEND_URL = "whiteboard-production-01f3.up.railway.app"  // Change this to your ngrok URL when sharing
 
 const roomId = new URLSearchParams(window.location.search).get('room') || 'room1'
 const protocol = BACKEND_URL.includes('ngrok') || BACKEND_URL.includes('.app') || BACKEND_URL.includes('https') ? "wss" : "ws"
@@ -395,3 +395,4 @@ setupEventListeners()
 // Initial render
 
 render()
+
