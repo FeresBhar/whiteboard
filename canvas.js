@@ -110,30 +110,54 @@ function renderThrottled(timestamp) {
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.save()
+  
+  // Apply zoom and pan transformations
   ctx.translate(panX, panY)
   ctx.scale(zoom, zoom)
   
   // Draw all strokes for current page
   const pageStrokes = strokes[currentPage] || []
-  pageStrokes.forEach(stroke => {
-    if (!stroke.points || stroke.points.length < 2) return
+  console.log(`🎨 Rendering ${pageStrokes.length} strokes for page ${currentPage}`)
+  
+  pageStrokes.forEach((stroke, index) => {
+    if (!stroke.points || stroke.points.length < 1) {
+      console.log(`⚠️ Stroke ${index} has no points:`, stroke)
+      return
+    }
+    
+    console.log(`✏️ Drawing stroke ${index} with ${stroke.points.length} points, color: ${stroke.color}`)
+    
     ctx.strokeStyle = stroke.color
     ctx.lineWidth = stroke.thickness
     ctx.lineCap = "round"
     ctx.lineJoin = "round"
     ctx.beginPath()
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
-    for (let i = 1; i < stroke.points.length; i++) {
-      ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+    
+    if (stroke.points.length === 1) {
+      // Single point - draw a small circle
+      const point = stroke.points[0]
+      ctx.arc(point.x, point.y, stroke.thickness / 2, 0, 2 * Math.PI)
+      ctx.fill()
+    } else {
+      // Multiple points - draw line
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+      }
+      ctx.stroke()
     }
-    ctx.stroke()
   })
   
   ctx.restore()
   
   // Update UI
-  document.getElementById('pageNum').textContent = currentPage
-  document.getElementById('zoomLevel').textContent = Math.round(zoom * 100)
+  const pageNumEl = document.getElementById('pageNum')
+  const zoomLevelEl = document.getElementById('zoomLevel')
+  
+  if (pageNumEl) pageNumEl.textContent = currentPage
+  if (zoomLevelEl) zoomLevelEl.textContent = Math.round(zoom * 100)
+  
+  console.log(`✅ Render complete - page ${currentPage}, zoom ${zoom}`)
   updatePageList()
 }
 
@@ -269,7 +293,13 @@ function handleMessage(e) {
       strokes[page].push(stroke)
       console.log('🆕 Created new stroke:', stroke.id)
     }
-    stroke.points.push({ x: msg.x, y: msg.y })
+    
+    // Check if this point already exists (avoid duplicates from local drawing)
+    const pointExists = stroke.points.some(p => p.x === msg.x && p.y === msg.y)
+    if (!pointExists) {
+      stroke.points.push({ x: msg.x, y: msg.y })
+      console.log(`➕ Added point (${msg.x}, ${msg.y}) to stroke ${stroke.id}`)
+    }
     
     if (page > totalPages) totalPages = page
     
@@ -323,7 +353,20 @@ function startDrawing(e) {
   
   console.log('📍 Drawing at coordinates:', { x, y })
   
-  // Send to server immediately
+  // Add to local strokes immediately for instant feedback
+  if (!strokes[currentPage]) strokes[currentPage] = []
+  const newStroke = {
+    id: currentStrokeId,
+    color: currentColor,
+    thickness: currentThickness,
+    points: [{ x, y }]
+  }
+  strokes[currentPage].push(newStroke)
+  
+  // Render immediately for local feedback
+  requestRender()
+  
+  // Send to server
   const message = {
     type: 'draw',
     page: currentPage,
@@ -344,6 +387,12 @@ function startDrawing(e) {
       const batch = localStrokeBuffer.splice(0, batchSize)
       
       batch.forEach(point => {
+        // Add to local stroke immediately
+        const localStroke = strokes[currentPage]?.find(s => s.id === currentStrokeId)
+        if (localStroke) {
+          localStroke.points.push({ x: point.x, y: point.y })
+        }
+        
         ws.send(JSON.stringify({
           type: 'draw',
           page: currentPage,
@@ -354,6 +403,9 @@ function startDrawing(e) {
           thickness: currentThickness
         }))
       })
+      
+      // Render after adding points
+      requestRender()
     }
   }, 80) // Reduced frequency from 50ms to 80ms for less network traffic
 }
