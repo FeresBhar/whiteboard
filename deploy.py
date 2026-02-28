@@ -84,8 +84,8 @@ def update_frontend_config(backend_url):
     
     canvas_js_path = "frontend/canvas.js"
     
-    # Read the current file
-    with open(canvas_js_path, 'r') as f:
+    # Read the current file with UTF-8 encoding
+    with open(canvas_js_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Update the BACKEND_URL
@@ -95,8 +95,8 @@ def update_frontend_config(backend_url):
             lines[i] = f'const BACKEND_URL = "{backend_url}"  // Updated by deploy script'
             break
     
-    # Write back to file
-    with open(canvas_js_path, 'w') as f:
+    # Write back to file with UTF-8 encoding
+    with open(canvas_js_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
     
     print(f"✅ Updated BACKEND_URL to: {backend_url}")

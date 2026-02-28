@@ -58,7 +58,37 @@
             margin-left: auto;
             display: flex;
             gap: 20px;
+            align-items: center;
             font-size: 14px;
+        }
+        .room-selector {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .room-selector label {
+            font-size: 14px;
+            color: white;
+        }
+        .room-selector select {
+            background: #2c3e50;
+            color: white;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 14px;
+        }
+        .room-selector button {
+            background: #27ae60;
+            border: none;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .room-selector button:hover {
+            background: #229954;
         }
         .main-content {
             flex: 1;
@@ -177,6 +207,15 @@
         
         <div class="info">
             <span id="connectionStatus">🟡 Connecting...</span>
+            <div class="room-selector">
+                <label for="roomSelect">Room:</label>
+                <select id="roomSelect">
+                    <option value="room1">Room 1</option>
+                    <option value="room2">Room 2</option>
+                    <option value="room3">Room 3</option>
+                </select>
+                <button id="joinRoom">Join</button>
+            </div>
             <span>Page <span id="pageNum">1</span></span>
             <span>Zoom: <span id="zoomLevel">100</span>%</span>
         </div>

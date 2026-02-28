@@ -14,11 +14,19 @@ let strokes = {}
 let currentColor = "#000000"
 let currentThickness = 2
 
+// Performance optimization variables
+let animationFrameId = null
+let needsRender = true
+let lastRenderTime = 0
+const RENDER_THROTTLE = 16 // ~60fps
+
 // Configure your backend URL here
 // For Railway: "your-app-name.railway.app"
 // For Render: "your-app-name.onrender.com"
 // For local testing: "localhost:8000"
-const BACKEND_URL = "localhost:8000"  // Change this to your deployed backend URL
+const BACKEND_URL = "localhost:8000"  // Updated automatically
+
+let currentRoom = new URLSearchParams(window.location.search).get('room') || 'room1'
 
 // Auto-detect protocol based on URL
 const isSecure = BACKEND_URL.includes('.railway.app') || 
@@ -28,21 +36,31 @@ const isSecure = BACKEND_URL.includes('.railway.app') ||
                 window.location.protocol === 'https:'
 
 const protocol = isSecure ? "wss" : "ws"
-const wsUrl = `${protocol}://${BACKEND_URL}/ws/${roomId}`
+let wsUrl = `${protocol}://${BACKEND_URL}/ws/${currentRoom}`
 
 let ws = null
 let reconnectAttempts = 0
 const maxReconnectAttempts = 5
 
 function connectWebSocket() {
+  wsUrl = `${protocol}://${BACKEND_URL}/ws/${currentRoom}`
   ws = new WebSocket(wsUrl)
   
   ws.onopen = () => {
-    console.log('✅ Connected to room:', roomId)
+    console.log('✅ Connected to room:', currentRoom)
     console.log('WebSocket URL:', wsUrl)
     reconnectAttempts = 0
-    document.getElementById('connectionStatus').textContent = '🟢 Connected'
+    document.getElementById('connectionStatus').textContent = `🟢 ${currentRoom}`
     document.getElementById('connectionStatus').style.color = '#27ae60'
+    
+    // Update room selector
+    document.getElementById('roomSelect').value = currentRoom
+    
+    // Clear local strokes when switching rooms
+    strokes = {}
+    currentPage = 1
+    totalPages = 1
+    requestRender()
   }
   
   ws.onerror = (error) => {
@@ -68,6 +86,27 @@ function connectWebSocket() {
 }
 
 connectWebSocket()
+
+// Optimized rendering with throttling
+function requestRender() {
+  if (!needsRender) {
+    needsRender = true
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId)
+    }
+    animationFrameId = requestAnimationFrame(renderThrottled)
+  }
+}
+
+function renderThrottled(timestamp) {
+  if (timestamp - lastRenderTime >= RENDER_THROTTLE) {
+    render()
+    lastRenderTime = timestamp
+    needsRender = false
+  } else {
+    animationFrameId = requestAnimationFrame(renderThrottled)
+  }
+}
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -99,6 +138,28 @@ function render() {
   updatePageList()
 }
 
+function switchRoom(newRoom) {
+  if (newRoom === currentRoom) return
+  
+  console.log(`Switching from ${currentRoom} to ${newRoom}`)
+  
+  // Close current connection
+  if (ws) {
+    ws.close()
+  }
+  
+  // Update room and reconnect
+  currentRoom = newRoom
+  
+  // Update URL without page reload
+  const url = new URL(window.location)
+  url.searchParams.set('room', newRoom)
+  window.history.pushState({}, '', url)
+  
+  // Reconnect to new room
+  connectWebSocket()
+}
+
 function renderPagePreview(pageNum) {
   const previewCanvas = document.createElement('canvas')
   previewCanvas.width = 160
@@ -112,10 +173,14 @@ function renderPagePreview(pageNum) {
   const scaleX = 160 / 1200
   const scaleY = 100 / 800
   
-  pageStrokes.forEach(stroke => {
+  // Optimize preview rendering - limit strokes for performance
+  const maxStrokes = 50 // Limit preview strokes for performance
+  const strokesToRender = pageStrokes.slice(-maxStrokes)
+  
+  strokesToRender.forEach(stroke => {
     if (!stroke.points || stroke.points.length < 2) return
     previewCtx.strokeStyle = stroke.color
-    previewCtx.lineWidth = stroke.thickness * scaleX
+    previewCtx.lineWidth = Math.max(1, stroke.thickness * scaleX)
     previewCtx.lineCap = "round"
     previewCtx.lineJoin = "round"
     previewCtx.beginPath()
@@ -161,7 +226,7 @@ function updatePageList() {
     pageItem.onclick = () => {
       currentPage = i
       ws.send(JSON.stringify({ type: 'page_change', page: i }))
-      render()
+      requestRender()
     }
     
     pageList.appendChild(pageItem)
@@ -187,7 +252,7 @@ function deletePage(pageNum) {
   }
   
   ws.send(JSON.stringify({ type: 'delete_page', page: pageNum }))
-  render()
+  requestRender()
 }
 
 function handleMessage(e) {
@@ -206,22 +271,32 @@ function handleMessage(e) {
     
     if (page > totalPages) totalPages = page
     
-    if (page === currentPage) render()
-    else updatePageList()
+    if (page === currentPage) {
+      requestRender()
+    } else {
+      // Only update page list if not on current page (less frequent)
+      setTimeout(updatePageList, 100)
+    }
   } else if (msg.type === 'undo') {
     if (strokes[msg.page] && strokes[msg.page].length > 0) {
       strokes[msg.page].pop()
-      if (msg.page === currentPage) render()
-      else updatePageList()
+      if (msg.page === currentPage) {
+        requestRender()
+      } else {
+        setTimeout(updatePageList, 100)
+      }
     }
   } else if (msg.type === 'page_change') {
     currentPage = msg.page
     if (msg.page > totalPages) totalPages = msg.page
-    render()
+    requestRender()
   } else if (msg.type === 'clear') {
     strokes[msg.page] = []
-    if (msg.page === currentPage) render()
-    else updatePageList()
+    if (msg.page === currentPage) {
+      requestRender()
+    } else {
+      setTimeout(updatePageList, 100)
+    }
   } else if (msg.type === 'delete_page') {
     deletePage(msg.page)
   }
@@ -252,10 +327,14 @@ function startDrawing(e) {
     thickness: currentThickness
   }))
   
-  // Start batching for smoother performance
+  // Start batching for smoother performance - reduced frequency for less lag
   sendInterval = setInterval(() => {
     if (localStrokeBuffer.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
-      localStrokeBuffer.forEach(point => {
+      // Send in smaller batches to reduce lag
+      const batchSize = Math.min(3, localStrokeBuffer.length)
+      const batch = localStrokeBuffer.splice(0, batchSize)
+      
+      batch.forEach(point => {
         ws.send(JSON.stringify({
           type: 'draw',
           page: currentPage,
@@ -266,17 +345,18 @@ function startDrawing(e) {
           thickness: currentThickness
         }))
       })
-      localStrokeBuffer = []
     }
-  }, 50) // Send batched points every 50ms
+  }, 80) // Reduced frequency from 50ms to 80ms for less network traffic
 }
 
 function continueDrawing(e) {
   if (!drawing) return
   const { x, y } = getCanvasCoords(e)
   
-  // Buffer for sending
-  localStrokeBuffer.push({ x, y })
+  // Buffer for sending - limit buffer size to prevent lag
+  if (localStrokeBuffer.length < 10) {
+    localStrokeBuffer.push({ x, y })
+  }
 }
 
 function stopDrawing() {
@@ -350,18 +430,18 @@ canvas.addEventListener('wheel', e => {
   e.preventDefault()
   const delta = e.deltaY > 0 ? 0.9 : 1.1
   zoom = Math.max(0.1, Math.min(5, zoom * delta))
-  render()
+  requestRender()
 })
 
 function setupEventListeners() {
   document.getElementById('zoomIn').addEventListener('click', () => {
     zoom = Math.min(5, zoom * 1.2)
-    render()
+    requestRender()
   })
 
   document.getElementById('zoomOut').addEventListener('click', () => {
     zoom = Math.max(0.1, zoom / 1.2)
-    render()
+    requestRender()
   })
 
   document.getElementById('undo').addEventListener('click', () => {
@@ -384,7 +464,7 @@ function setupEventListeners() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'page_change', page: currentPage }))
     }
-    render()
+    requestRender()
   })
 
   document.getElementById('colorPicker').addEventListener('change', e => {
@@ -394,10 +474,21 @@ function setupEventListeners() {
   document.getElementById('thickness').addEventListener('change', e => {
     currentThickness = parseInt(e.target.value)
   })
+
+  // Room selector functionality
+  document.getElementById('joinRoom').addEventListener('click', () => {
+    const selectedRoom = document.getElementById('roomSelect').value
+    switchRoom(selectedRoom)
+  })
+
+  document.getElementById('roomSelect').addEventListener('change', (e) => {
+    const selectedRoom = e.target.value
+    switchRoom(selectedRoom)
+  })
 }
 
 // Setup event listeners when DOM is ready
 setupEventListeners()
 
 // Initial render
-render()
+requestRender()
