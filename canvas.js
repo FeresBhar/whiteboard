@@ -255,9 +255,11 @@ function deletePage(pageNum) {
 }
 
 function handleMessage(e) {
+  console.log('📨 Received message:', e.data)
   const msg = JSON.parse(e.data)
   
   if (msg.type === 'draw') {
+    console.log('✏️ Processing draw message:', msg)
     const page = msg.page
     if (!strokes[page]) strokes[page] = []
     
@@ -265,6 +267,7 @@ function handleMessage(e) {
     if (!stroke) {
       stroke = { id: msg.stroke_id, color: msg.color, thickness: msg.thickness, points: [] }
       strokes[page].push(stroke)
+      console.log('🆕 Created new stroke:', stroke.id)
     }
     stroke.points.push({ x: msg.x, y: msg.y })
     
@@ -306,8 +309,10 @@ let localStrokeBuffer = []
 let sendInterval = null
 
 function startDrawing(e) {
+  console.log('🖱️ startDrawing called', { drawing, wsReady: ws?.readyState === WebSocket.OPEN })
+  
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.error('WebSocket not connected')
+    console.error('❌ WebSocket not connected, readyState:', ws?.readyState)
     return
   }
   
@@ -316,15 +321,20 @@ function startDrawing(e) {
   localStrokeBuffer = []
   const { x, y } = getCanvasCoords(e)
   
+  console.log('📍 Drawing at coordinates:', { x, y })
+  
   // Send to server immediately
-  ws.send(JSON.stringify({
+  const message = {
     type: 'draw',
     page: currentPage,
     stroke_id: currentStrokeId,
     x, y,
     color: currentColor,
     thickness: currentThickness
-  }))
+  }
+  
+  console.log('📤 Sending draw message:', message)
+  ws.send(JSON.stringify(message))
   
   // Start batching for smoother performance - reduced frequency for less lag
   sendInterval = setInterval(() => {
@@ -433,23 +443,40 @@ canvas.addEventListener('wheel', e => {
 })
 
 function setupEventListeners() {
-  document.getElementById('zoomIn').addEventListener('click', () => {
+  console.log('🔧 Setting up event listeners...')
+  
+  // Check if elements exist
+  const elements = [
+    'zoomIn', 'zoomOut', 'undo', 'clear', 'addPage', 
+    'colorPicker', 'thickness', 'joinRoom', 'roomSelect'
+  ]
+  
+  elements.forEach(id => {
+    const element = document.getElementById(id)
+    if (!element) {
+      console.error(`❌ Element not found: ${id}`)
+    } else {
+      console.log(`✅ Found element: ${id}`)
+    }
+  })
+  
+  document.getElementById('zoomIn')?.addEventListener('click', () => {
     zoom = Math.min(5, zoom * 1.2)
     requestRender()
   })
 
-  document.getElementById('zoomOut').addEventListener('click', () => {
+  document.getElementById('zoomOut')?.addEventListener('click', () => {
     zoom = Math.max(0.1, zoom / 1.2)
     requestRender()
   })
 
-  document.getElementById('undo').addEventListener('click', () => {
+  document.getElementById('undo')?.addEventListener('click', () => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'undo', page: currentPage }))
     }
   })
 
-  document.getElementById('clear').addEventListener('click', () => {
+  document.getElementById('clear')?.addEventListener('click', () => {
     if (confirm('Clear this page?')) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'clear', page: currentPage }))
@@ -457,7 +484,7 @@ function setupEventListeners() {
     }
   })
 
-  document.getElementById('addPage').addEventListener('click', () => {
+  document.getElementById('addPage')?.addEventListener('click', () => {
     totalPages++
     currentPage = totalPages
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -466,28 +493,42 @@ function setupEventListeners() {
     requestRender()
   })
 
-  document.getElementById('colorPicker').addEventListener('change', e => {
+  document.getElementById('colorPicker')?.addEventListener('change', e => {
     currentColor = e.target.value
+    console.log('🎨 Color changed to:', currentColor)
   })
 
-  document.getElementById('thickness').addEventListener('change', e => {
+  document.getElementById('thickness')?.addEventListener('change', e => {
     currentThickness = parseInt(e.target.value)
+    console.log('📏 Thickness changed to:', currentThickness)
   })
 
   // Room selector functionality
-  document.getElementById('joinRoom').addEventListener('click', () => {
+  document.getElementById('joinRoom')?.addEventListener('click', () => {
     const selectedRoom = document.getElementById('roomSelect').value
     switchRoom(selectedRoom)
   })
 
-  document.getElementById('roomSelect').addEventListener('change', (e) => {
+  document.getElementById('roomSelect')?.addEventListener('change', (e) => {
     const selectedRoom = e.target.value
     switchRoom(selectedRoom)
   })
+  
+  console.log('✅ Event listeners setup complete')
 }
 
 // Setup event listeners when DOM is ready
-setupEventListeners()
+document.addEventListener('DOMContentLoaded', () => {
+  setupEventListeners()
+  // Initial render
+  requestRender()
+})
 
-// Initial render
-requestRender()
+// Also setup immediately in case DOM is already loaded
+if (document.readyState === 'loading') {
+  // DOM is still loading, wait for it
+} else {
+  // DOM is already loaded
+  setupEventListeners()
+  requestRender()
+}

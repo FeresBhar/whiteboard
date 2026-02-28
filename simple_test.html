@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Drawing Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        canvas { border: 2px solid #000; cursor: crosshair; display: block; margin: 20px 0; }
+        .status { margin: 10px 0; padding: 10px; background: #f0f0f0; }
+        .log { height: 200px; overflow-y: scroll; background: white; border: 1px solid #ccc; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Simple Drawing Test</h1>
+    
+    <div class="status">
+        <strong>Status:</strong> <span id="status">Initializing...</span>
+    </div>
+    
+    <canvas id="canvas" width="600" height="400"></canvas>
+    
+    <div>
+        <button onclick="testLocalDraw()">Test Local Drawing</button>
+        <button onclick="clearCanvas()">Clear Canvas</button>
+    </div>
+    
+    <div class="log" id="log"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        
+        let drawing = false;
+        
+        function logMessage(msg) {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `[${time}] ${msg}<br>`;
+            log.scrollTop = log.scrollHeight;
+            console.log(msg);
+        }
+        
+        function updateStatus(msg) {
+            status.textContent = msg;
+            logMessage(`Status: ${msg}`);
+        }
+        
+        // Test local drawing first
+        function testLocalDraw() {
+            logMessage('🧪 Testing local drawing...');
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(50, 50);
+            ctx.lineTo(200, 200);
+            ctx.stroke();
+            logMessage('✅ Local drawing test complete');
+        }
+        
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            logMessage('🧹 Canvas cleared');
+        }
+        
+        // Mouse events
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+        
+        canvas.addEventListener('mousedown', (e) => {
+            drawing = true;
+            const pos = getMousePos(e);
+            logMessage(`🖱️ Mouse down at (${pos.x}, ${pos.y})`);
+            
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            
+            // Test WebSocket
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    type: 'draw',
+                    page: 1,
+                    stroke_id: Date.now().toString(),
+                    x: pos.x,
+                    y: pos.y,
+                    color: '#000000',
+                    thickness: 2
+                };
+                ws.send(JSON.stringify(message));
+                logMessage(`📤 Sent WebSocket message: ${JSON.stringify(message)}`);
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!drawing) return;
+            
+            const pos = getMousePos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            if (drawing) {
+                drawing = false;
+                logMessage('🖱️ Mouse up - drawing stopped');
+            }
+        });
+        
+        // WebSocket connection
+        const BACKEND_URL = "whiteboard-fs5m.onrender.com";
+        const wsUrl = `wss://${BACKEND_URL}/ws/room1`;
+        
+        logMessage(`🔗 Connecting to: ${wsUrl}`);
+        updateStatus('Connecting...');
+        
+        const ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+            updateStatus('✅ Connected');
+            logMessage('✅ WebSocket connected successfully');
+        };
+        
+        ws.onerror = (error) => {
+            updateStatus('❌ Connection Error');
+            logMessage(`❌ WebSocket error: ${error}`);
+        };
+        
+        ws.onclose = () => {
+            updateStatus('🟡 Disconnected');
+            logMessage('🟡 WebSocket disconnected');
+        };
+        
+        ws.onmessage = (e) => {
+            logMessage(`📨 Received: ${e.data}`);
+            
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'draw') {
+                    // Draw received point
+                    ctx.fillStyle = msg.color || '#000';
+                    ctx.fillRect(msg.x - 2, msg.y - 2, 4, 4);
+                    logMessage(`✏️ Drew point at (${msg.x}, ${msg.y})`);
+                }
+            } catch (err) {
+                logMessage(`❌ Error parsing message: ${err}`);
+            }
+        };
+        
+        logMessage('🚀 Test page loaded');
+        updateStatus('Loaded');
+    </script>
+</body>
+</html>

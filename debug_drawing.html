@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawing Debug Test</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        canvas { border: 2px solid #333; cursor: crosshair; }
+        .debug { margin: 10px 0; padding: 10px; background: #f0f0f0; }
+        .status { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>🐛 Drawing Debug Test</h1>
+    
+    <div class="debug">
+        <div class="status" id="canvasStatus">Canvas: Not loaded</div>
+        <div class="status" id="wsStatus">WebSocket: Not connected</div>
+        <div class="status" id="drawStatus">Drawing: Not started</div>
+        <div class="status" id="eventStatus">Events: Not registered</div>
+    </div>
+    
+    <canvas id="board" width="800" height="600"></canvas>
+    
+    <div class="debug">
+        <h3>Debug Log:</h3>
+        <div id="debugLog" style="height: 200px; overflow-y: scroll; background: white; padding: 10px; border: 1px solid #ccc;"></div>
+    </div>
+
+    <script>
+        // Debug logging
+        function log(message) {
+            const debugLog = document.getElementById('debugLog');
+            const time = new Date().toLocaleTimeString();
+            debugLog.innerHTML += `[${time}] ${message}<br>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(message);
+        }
+
+        // Canvas setup
+        const canvas = document.getElementById("board");
+        const ctx = canvas.getContext("2d");
+        
+        if (canvas && ctx) {
+            document.getElementById('canvasStatus').textContent = 'Canvas: ✅ Loaded';
+            log('✅ Canvas and context loaded successfully');
+        } else {
+            document.getElementById('canvasStatus').textContent = 'Canvas: ❌ Failed';
+            log('❌ Canvas or context failed to load');
+        }
+
+        // Drawing variables
+        let drawing = false;
+        let currentColor = "#000000";
+        let currentThickness = 2;
+
+        // WebSocket setup
+        const BACKEND_URL = "whiteboard-fs5m.onrender.com";
+        const currentRoom = new URLSearchParams(window.location.search).get('room') || 'room1';
+        const protocol = "wss";
+        const wsUrl = `${protocol}://${BACKEND_URL}/ws/${currentRoom}`;
+
+        log(`🔗 Connecting to: ${wsUrl}`);
+
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            document.getElementById('wsStatus').textContent = 'WebSocket: ✅ Connected';
+            log('✅ WebSocket connected successfully');
+        };
+
+        ws.onerror = (error) => {
+            document.getElementById('wsStatus').textContent = 'WebSocket: ❌ Error';
+            log(`❌ WebSocket error: ${error}`);
+        };
+
+        ws.onclose = () => {
+            document.getElementById('wsStatus').textContent = 'WebSocket: 🟡 Disconnected';
+            log('🟡 WebSocket disconnected');
+        };
+
+        ws.onmessage = (e) => {
+            log(`📨 Received message: ${e.data}`);
+        };
+
+        // Drawing functions
+        function getCanvasCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            log(`📍 Mouse coords: (${x}, ${y})`);
+            return { x, y };
+        }
+
+        function startDrawing(e) {
+            log('🖱️ Mouse down - starting drawing');
+            drawing = true;
+            document.getElementById('drawStatus').textContent = 'Drawing: ✅ Active';
+            
+            const { x, y } = getCanvasCoords(e);
+            
+            // Draw locally first
+            ctx.strokeStyle = currentColor;
+            ctx.lineWidth = currentThickness;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            
+            // Send to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    type: 'draw',
+                    page: 1,
+                    stroke_id: Date.now().toString(),
+                    x, y,
+                    color: currentColor,
+                    thickness: currentThickness
+                };
+                ws.send(JSON.stringify(message));
+                log(`📤 Sent draw message: ${JSON.stringify(message)}`);
+            } else {
+                log('❌ WebSocket not ready for sending');
+            }
+        }
+
+        function continueDrawing(e) {
+            if (!drawing) return;
+            
+            const { x, y } = getCanvasCoords(e);
+            
+            // Draw locally
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            
+            log(`✏️ Drawing to: (${x}, ${y})`);
+        }
+
+        function stopDrawing() {
+            if (!drawing) return;
+            
+            log('🖱️ Mouse up - stopping drawing');
+            drawing = false;
+            document.getElementById('drawStatus').textContent = 'Drawing: 🟡 Stopped';
+        }
+
+        // Event listeners
+        try {
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', continueDrawing);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseleave', stopDrawing);
+            
+            document.getElementById('eventStatus').textContent = 'Events: ✅ Registered';
+            log('✅ Event listeners registered successfully');
+        } catch (error) {
+            document.getElementById('eventStatus').textContent = 'Events: ❌ Failed';
+            log(`❌ Failed to register event listeners: ${error}`);
+        }
+
+        // Test drawing on load
+        setTimeout(() => {
+            log('🧪 Running canvas test...');
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(50, 50);
+            ctx.lineTo(150, 150);
+            ctx.stroke();
+            log('✅ Canvas test line drawn (red diagonal)');
+        }, 1000);
+    </script>
+</body>
+</html>
