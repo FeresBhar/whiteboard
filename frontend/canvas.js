@@ -14,7 +14,6 @@ let strokes = {}
 let currentColor = "#000000"
 let currentThickness = 2
 
-// Performance optimization variables
 let animationFrameId = null
 let needsRender = true
 let lastRenderTime = 0
