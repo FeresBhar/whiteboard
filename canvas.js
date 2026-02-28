@@ -23,7 +23,7 @@ const RENDER_THROTTLE = 16 // ~60fps
 // For Railway: "your-app-name.railway.app"
 // For Render: "your-app-name.onrender.com"
 // For local testing: "localhost:8000"
-const BACKEND_URL = "fd38-196-176-254-74.ngrok-free.app"  // Updated automatically
+const BACKEND_URL = "whiteboard-fs5m.onrender.com"  // Updated automatically
 
 let currentRoom = new URLSearchParams(window.location.search).get('room') || 'room1'
 
