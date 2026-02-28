@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: whiteboard-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: whiteboard-redis
+          property: connectionString
+  
+  - type: redis
+    name: whiteboard-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
